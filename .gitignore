@@ -3,3 +3,5 @@ prova.jpg
 .devcontainer
 datasets/
 chessboard_segment/
+detect_pieces/
+backup/

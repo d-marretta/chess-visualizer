@@ -1,0 +1,18 @@
+path: ./detection_dataset
+train: images/train 
+val: images/val
+test: images/test
+
+names:
+    0: white-pawn
+    1: white-rook
+    2: white-knight
+    3: white-bishop
+    4: white-queen
+    5: white-king
+    6: black-pawn
+    7: black-rook
+    8: black-knight
+    9: black-bishop
+    10: black-queen
+    11: black-king

@@ -2,10 +2,9 @@ import cv2
 import os
 import numpy as np
 import math
-im = cv2.imread('datasets/dataset/images/train/G019_IMG014.jpg')
+im = cv2.imread('datasets/detection_dataset/images/test/G000_IMG000.jpg')
 height, width, _ = im.shape
-#coords = [0.8166071428571429, 0.4472850529100529, 0.5936044973544974, 0.7356349206349206, 0.1873776455026455, 0.5298181216931217, 0.4569113756613757, 0.3193915343915344]
-coords = [0.22916997354497354, 0.7538161375661375, 0.16593915343915344, 0.31415674603174604, 0.6678042328042328, 0.24065806878306878, 0.8885284391534392, 0.6222685185185185]
+coords = [0.15908203125, 0.35113932291666666, 0.5768977864583333, 0.20787434895833334, 0.84970703125, 0.5081054687500001, 0.34612630208333334, 0.7500325520833333]
 
 top_left = coords[0] * width, coords[1] * height
 top_right = coords[2] * width, coords[3] * height
@@ -28,12 +27,23 @@ grid_lines = warped.copy()
 
 for i in range(n_squares + 1):
     y = int(i * square_size)
-    cv2.line(grid_lines, (0, y), (side_chessboard, y), (0, 0, 255), 2)
+    cv2.line(grid_lines, (0, y), (side_chessboard, y), (0, 0, 255), 1)
 
 for i in range(n_squares + 1):
     x = int(i * square_size)
-    cv2.line(grid_lines, (x, 0), (x, side_chessboard), (0, 0, 255), 2)  
+    cv2.line(grid_lines, (x, 0), (x, side_chessboard), (0, 0, 255), 1)  
 
+
+bbox = [0.41768229166666665, 0.24734700520833333, 0.044514973958333336, 0.09892578125]
+
+x_center, y_center, box_width, box_height = bbox[0]*width, bbox[1]*height, bbox[2]*width, bbox[3]*height
+original_point = np.array([[x_center, y_center+box_height//2.3]], dtype='float32')  # Shape (1, 1, 2)
+original_point = np.array([original_point])  # Adding batch dimension for cv2.perspectiveTransform
+
+transformed_point = cv2.perspectiveTransform(original_point, M)
+
+transformed_x, transformed_y = transformed_point[0][0][0], transformed_point[0][0][1]
+
+cv2.circle(grid_lines, (int(transformed_x),int(transformed_y)), 3, (0,0,255), -1)
 cv2.imwrite('prova.jpg', grid_lines)
-
 
