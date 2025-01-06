@@ -7,7 +7,7 @@ import cairosvg
 import ultralytics
 
 def get_coords_chessboards(model, image_path):
-    results = model(image_path)
+    results = model(image_path, verbose=False)
     result = results[0]
     contour = result.masks.xy.pop()
 
@@ -64,11 +64,10 @@ def get_bboxes(model, image_path, M, square_size):
                 10:"q",
                 11:"k"}
     
-    results = model(image_path,conf=0.30)
+    results = model(image_path,conf=0.30, verbose=False)
     result = results[0]
     bboxs = []
     for box in result.boxes:
-        # print(int(box.cls), float(box.conf))
         b = box.xywh[0]
         b_class = classes[int(box.cls)]
         bboxs.append((b_class, b))
@@ -90,7 +89,7 @@ def get_bboxes(model, image_path, M, square_size):
 
     return positions
 
-def get_fen_board(positions):
+def get_fen_board(positions, white_orientation):
     board = [["" for _ in range(8)] for _ in range(8)]
 
     for row, col, piece_type in positions:
@@ -113,21 +112,31 @@ def get_fen_board(positions):
         fen_rows.append(fen_row)
 
     fen_board = "/".join(fen_rows)
+    board = chess.Board(fen_board)
 
-    return fen_board
+    if white_orientation == 'west':
+        board = board.transform(chess.flip_diagonal)
+        board = board.transform(chess.flip_horizontal)
+    elif white_orientation == 'north':
+        board = board.transform(chess.flip_vertical)
+        board = board.transform(chess.flip_horizontal)
+    elif white_orientation == 'east':
+        board = board.transform(chess.flip_anti_diagonal)
+        board = board.transform(chess.flip_horizontal)
 
-def main(seg_yolo, detect_yolo, image_path):
+    return board
+
+def main(seg_yolo, detect_yolo, image_path, white_orientation = 'south'):
     vertices = get_coords_chessboards(seg_yolo, image_path)
     M, square_size = warp_chessboard(vertices)
     positions = get_bboxes(detect_yolo, image_path, M, square_size)
-    fen_board = get_fen_board(positions)
+    board = get_fen_board(positions, white_orientation)
 
-    board = chess.Board(fen_board)
     cairosvg.svg2png(chess.svg.board(board, size=1200),write_to='prova.png')
 
 
 if __name__ == '__main__':
     seg_yolo = ultralytics.YOLO('./models/yolo11n-seg-best.pt')
-    detect_yolo = ultralytics.YOLO('./models/yolo11n-best.pt')
-    image_path = 'datasets/detection_dataset/images/test/G076_IMG010.jpg'
-    main(seg_yolo, detect_yolo, image_path)
+    detect_yolo = ultralytics.YOLO('./models/yolo11s-best.pt')
+    image_path = 'datasets/detection_dataset/images/test/G000_IMG006.jpg'
+    main(seg_yolo, detect_yolo, image_path, 'west')

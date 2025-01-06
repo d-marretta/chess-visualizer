@@ -1,0 +1,4 @@
+/home/daniele/Android/Sdk/cmake/3.22.1/bin/ninja \
+  -C \
+  /home/daniele/AndroidStudioProjects/ChessVisualizer/OpenCV/.cxx/Debug/1m4l4t3o/arm64-v8a \
+  opencv_jni_shared
