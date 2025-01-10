@@ -8,6 +8,11 @@ appcompat = "1.7.0"
 material = "1.12.0"
 activity = "1.9.3"
 constraintlayout = "2.2.0"
+nd4jApi = "1.0.0-M2.1"
+nd4jNative = "1.0.0-M1.1"
+nd4jNativePlatform = "1.0.0-M1.1"
+nd4jNativeVersion = "1.0.0-M2.1"
+nd4jNd4jNative = "1.0.0-beta6"
 playServicesTfliteJava = "16.4.0"
 
 [libraries]
@@ -21,6 +26,12 @@ appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "a
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+nd4j-api = { module = "org.nd4j:nd4j-api", version.ref = "nd4jApi" }
+nd4j-native = { module = "org.nd4j:nd4j-native", version.ref = "nd4jNative" }
+nd4j-native-platform = { module = "org.nd4j:nd4j-native-platform", version.ref = "nd4jApi" }
+nd4j-native-platform-v100m11 = { module = "org.nd4j:nd4j-native-platform", version.ref = "nd4jNativePlatform" }
+nd4j-native-v100beta6 = { module = "org.nd4j:nd4j-native", version.ref = "nd4jNd4jNative" }
+nd4j-native-v100m21 = { module = "org.nd4j:nd4j-native", version.ref = "nd4jNativeVersion" }
 play-services-tflite-gpu = { module = "com.google.android.gms:play-services-tflite-gpu", version.ref = "playServicesTfliteJava" }
 play-services-tflite-java = { module = "com.google.android.gms:play-services-tflite-java", version.ref = "playServicesTfliteJava" }
 play-services-tflite-support = { module = "com.google.android.gms:play-services-tflite-support", version.ref = "playServicesTfliteJava" }

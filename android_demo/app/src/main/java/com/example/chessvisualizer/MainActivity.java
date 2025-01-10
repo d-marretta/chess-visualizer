@@ -1,5 +1,9 @@
 package com.example.chessvisualizer;
 
+import static org.opencv.core.Core.addWeighted;
+
+import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
@@ -17,6 +21,9 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Rect;
+import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.android.OpenCVLoader;
 
@@ -26,8 +33,11 @@ import androidx.appcompat.widget.PopupMenu;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
@@ -154,11 +164,50 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         frameCounter++;
         if (frameCounter % FRAME_INTERVAL == 0) {
-            Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_RGB2GRAY);
+            //Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_RGB2GRAY);
 
             runOnUiThread(() -> {
-                Bitmap bmp = Bitmap.createBitmap(grayMat.cols(), grayMat.rows(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(grayMat, bmp);
+
+                AssetManager assetManager = getAssets();
+
+                InputStream istr;
+                Bitmap bitmap;
+                try {
+                    istr = assetManager.open("G000_IMG000.jpg");
+                    bitmap = BitmapFactory.decodeStream(istr);
+                    istr.close();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                Mat imageTemp = new Mat();
+                Utils.bitmapToMat(bitmap, imageTemp);
+                Log.v("ImageView size", processedImageView.getWidth() + " " + processedImageView.getHeight());
+                Imgproc.resize(imageTemp, imageTemp, new Size(processedImageView.getHeight(), processedImageView.getWidth()));
+                Bitmap input = Bitmap.createBitmap(imageTemp.cols(), imageTemp.height(), Bitmap.Config.ARGB_8888);
+                Utils.matToBitmap(imageTemp, input);
+                List<Network.Obj> results = net.runSegModel(input, 0.25f, 0.65f, input.getHeight(), input.getWidth());
+
+                Mat image = new Mat();
+                Utils.bitmapToMat(input, image);
+                Mat mask = image.clone();
+
+                for (Network.Obj obj : results) {
+                    Mat roi = mask.submat(obj.rect);
+                    Log.v("rect", obj.rect.x + " " + obj.rect.y + " " + obj.rect.width + " " + obj.rect.height);
+                    roi.setTo(new Scalar(0,0,255), obj.boxMask);
+                    roi.release();
+
+                }
+                addWeighted(image, 0.5, mask, 0.8, 1.0, image);
+                for (Network.Obj obj : results) {
+
+                    Imgproc.rectangle(image, obj.rect, new Scalar(0,0,255));
+                }
+                Bitmap bmp = Bitmap.createBitmap(image.cols(), image.rows(), Bitmap.Config.ARGB_8888);
+                Utils.matToBitmap(image, bmp);
+
+
+
                 processedImageView.setImageBitmap(bmp);
             });
         }
