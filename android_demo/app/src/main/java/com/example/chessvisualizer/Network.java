@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +66,8 @@ public class Network {
     private int segNumAttributes;
     private int segNumAnchors;
     private InterpreterApi det_interpreter;
+    private int detNumAttributes;
+    private int detNumAnchors;
     private ImageProcessor imageProcessor;
 
     public interface InitializationCallback {
@@ -72,13 +75,18 @@ public class Network {
         void onInitializationFailed(Exception e);
     }
 
-    public static class Obj {
+    public static class ObjSeg {
         public int label;
         public Rect rect;
         public float probability;
         public Mat boxMask;
     }
 
+    public static class ObjDet {
+        public int label;
+        public Rect rect;
+        public float probability;
+    }
     public Network(Context context, String segModelName, String detModelName, InitializationCallback callback) throws IOException {
         Task<Void> initializeTask = TfLite.initialize(context,
                                         TfLiteInitializationOptions.builder()
@@ -114,11 +122,17 @@ public class Network {
     }
 
     private void setSegOutputDims(){
-        int[] output0Shape = seg_interpreter.getOutputTensor(0).shape(); // [1,37.8400]
+        int[] output0Shape = seg_interpreter.getOutputTensor(0).shape(); // [1,37,8400]
 
         if (output0Shape != null) {
             segNumAttributes = output0Shape[1];
             segNumAnchors = output0Shape[2];
+        }
+
+        output0Shape = det_interpreter.getOutputTensor(0).shape(); // [1, 16, 8400]
+        if (output0Shape != null){
+            detNumAttributes = output0Shape[1];
+            detNumAnchors = output0Shape[2];
         }
 
     }
@@ -134,7 +148,7 @@ public class Network {
         return retFile;
     }
 
-    public List<Obj> runSegModel(Bitmap bitmap, float confThreshold, float nmsThreshold, int ogImgHeight, int ogImgWidth) {
+    public List<ObjSeg> runSegModel(Bitmap bitmap, float confThreshold, float nmsThreshold, int ogImgHeight, int ogImgWidth) {
         TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
         tensorImage.load(bitmap);
 
@@ -167,8 +181,23 @@ public class Network {
 
     }
 
+    public List<ObjDet> runDetModel(Bitmap bitmap, int numClasses, float confThreshold, float nmsThreshold, int ogImgHeight, int ogImgWidth) {
+        TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
+        tensorImage.load(bitmap);
 
-    private List<Obj> postProcessSegmentation(Object[] outputs, float confThreshold, float nmsThreshold, int ogImgWidth, int ogImgHeight) {
+        TensorImage processedTensor = imageProcessor.process(tensorImage);
+        TensorBuffer output0Buffer = TensorBuffer.createFixedSize(new int[]{1, detNumAttributes, detNumAnchors}, DataType.FLOAT32);
+        Map<Integer, Object> outputMap = new HashMap<>();
+        outputMap.put(0, output0Buffer.getBuffer());
+
+        det_interpreter.runForMultipleInputsOutputs(new Object[]{processedTensor.getBuffer()}, outputMap);
+
+        float[] output0Flat = output0Buffer.getFloatArray();
+
+        return postProcessDetection(output0Flat, numClasses, confThreshold, nmsThreshold, ogImgWidth, ogImgHeight);
+
+    }
+    private List<ObjSeg> postProcessSegmentation(Object[] outputs, float confThreshold, float nmsThreshold, int ogImgWidth, int ogImgHeight) {
 
         float[] output0 = (float[]) outputs[0];
         float[][][][] output1 = (float[][][][]) outputs[1];
@@ -179,12 +208,10 @@ public class Network {
         float[][][] reshaped = new float[SEG_CHANNELS][SEG_H][SEG_W];
         float[] output1Flattened = new float[SEG_CHANNELS * SEG_H * SEG_W];
 
-        //int index = 0;
         for (int i = 0; i < SEG_H; i++) {
             for (int j = 0; j < SEG_W; j++) {
                 for (int k = 0; k < SEG_CHANNELS; k++) {
                     reshaped[k][i][j] = original[i][j][k];
-                    //output1Flattened[index++] = output1[0][i][j][k];
                 }
             }
         }
@@ -289,19 +316,19 @@ public class Network {
         List<Integer> indices = indicesMat.toList();
 
         Mat masks = new Mat();
-        List<Obj> objs = new ArrayList<>();
+        List<ObjSeg> objSegs = new ArrayList<>();
         int cnt = 0;
         for (int i : indices) {
             if (cnt >= TOP_K) break;
 
             Rect tmp = bboxes.get(i);
-            Obj obj = new Obj();
-            obj.label = labels.get(i);
-            obj.rect = tmp;
-            obj.probability = scores.get(i);
+            ObjSeg objSeg = new ObjSeg();
+            objSeg.label = labels.get(i);
+            objSeg.rect = tmp;
+            objSeg.probability = scores.get(i);
 
             masks.push_back(maskConfs.get(i));
-            objs.add(obj);
+            objSegs.add(objSeg);
             cnt++;
         }
 
@@ -340,15 +367,108 @@ public class Network {
                 Mat maskTemp = new Mat(dest, roi);
                 Imgproc.resize(maskTemp, mask, new Size(ogImgWidth, ogImgHeight), INTER_LINEAR);
 
-                Mat subMatrix = mask.submat(objs.get(i).rect);
+                Mat subMatrix = mask.submat(objSegs.get(i).rect);
                 Mat binaryMask = new Mat();
                 compare(subMatrix, new Scalar(SEGMENTATION_THRESHOLD), binaryMask, Core.CMP_GT);
-                objs.get(i).boxMask = binaryMask;
+                objSegs.get(i).boxMask = binaryMask;
             }
         }
 
-        return objs;
+        return objSegs;
     }
 
+    private List<ObjDet> postProcessDetection(float[] output, int numClasses, float confThreshold, float nmsThreshold, int ogImgWidth, int ogImgHeight){
 
+        Mat outputMat = new Mat(detNumAttributes, detNumAnchors, CvType.CV_32F);
+        outputMat.put(0, 0, output);
+        transpose(outputMat, outputMat);
+
+        List<Integer> labels = new ArrayList<>();
+        List<Float> scores = new ArrayList<>();
+        List<Rect> bboxes = new ArrayList<>();
+
+        float mRatio = 1.0f / (Math.min(YOLO_WIDTH / (float) ogImgWidth, YOLO_HEIGHT / (float) ogImgHeight));
+
+        for (int i = 0; i < detNumAnchors; i++) {
+            float[] row = new float[detNumAttributes];
+            outputMat.get(i, 0, row);
+
+            float[] bboxesArr = new float[4];
+            System.arraycopy(row, 0, bboxesArr, 0, 4);
+
+            float[] scoresArr = new float[numClasses];
+            System.arraycopy(row, 4, scoresArr, 0, numClasses);
+
+            float maxScore = -1;
+            int maxIndex = -1;
+            for (int j = 0; j < numClasses; j++) {
+                if (scoresArr[j] > maxScore) {
+                    maxScore = scoresArr[j];
+                    maxIndex = j;
+                }
+            }
+
+            if (maxScore > confThreshold) {
+                float x = bboxesArr[0];
+                float y = bboxesArr[1];
+                float w = bboxesArr[2];
+                float h = bboxesArr[3];
+
+                float x0 = clamp((x - 0.5f * w) * ogImgWidth, 0.0f, ogImgWidth);
+                float y0 = clamp((y - 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
+                float x1 = clamp((x + 0.5f * w) * ogImgWidth, 0.0f,  ogImgWidth);
+                float y1 = clamp((y + 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
+
+                Rect bbox = new Rect((int) x0, (int) y0, (int) (x1 - x0), (int) (y1 - y0));
+                labels.add(maxIndex);
+                scores.add(maxScore);
+                bboxes.add(bbox);
+            }
+        }
+
+        MatOfRect2d matOfBboxes = new MatOfRect2d();
+        Rect2d[] rect2dArray = new Rect2d[bboxes.size()];
+        for (int i = 0; i < bboxes.size(); i++) {
+            Rect rect = bboxes.get(i);
+            rect2dArray[i] = new Rect2d(rect.x, rect.y, rect.width, rect.height);
+        }
+        matOfBboxes.fromArray(rect2dArray);
+
+        MatOfFloat matOfScores = new MatOfFloat();
+        float[] scoreArray = new float[scores.size()];
+        for (int i = 0; i < scores.size(); i++) {
+            scoreArray[i] = scores.get(i);
+        }
+        matOfScores.fromArray(scoreArray);
+
+        MatOfInt indicesMat = new MatOfInt();
+
+        MatOfInt matOfLabels = new MatOfInt();
+        int[] labelArray = new int[labels.size()];
+        for (int i = 0; i < labels.size(); i++) {
+            labelArray[i] = labels.get(i);
+        }
+        matOfLabels.fromArray(labelArray);
+
+        Dnn.NMSBoxesBatched(matOfBboxes, matOfScores, matOfLabels, confThreshold, nmsThreshold, indicesMat);
+
+        List<Integer> indices = indicesMat.toList();
+
+        List<ObjDet> objDets = new ArrayList<>();
+        int cnt = 0;
+        for (int i : indices) {
+            if (cnt >= TOP_K) break;
+
+            Rect tmp = bboxes.get(i);
+            ObjDet objDet = new ObjDet();
+            objDet.label = labels.get(i);
+            objDet.rect = tmp;
+            objDet.probability = scores.get(i);
+
+            objDets.add(objDet);
+            cnt++;
+        }
+
+        return objDets;
+    }
 }

@@ -1,9 +1,8 @@
 package com.example.chessvisualizer;
 
-import static org.opencv.core.Core.addWeighted;
+import static org.opencv.core.Core.perspectiveTransform;
+import static java.util.Map.entry;
 
-import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
@@ -19,13 +18,16 @@ import android.widget.Toast;
 
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.Utils;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.utils.Converters;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -33,23 +35,48 @@ import androidx.appcompat.widget.PopupMenu;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+
+import com.chaquo.python.PyObject;
+import com.chaquo.python.Python;
 
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
     private static final String TAG = "MainActivity";
+    private static final int FRAME_INTERVAL = 10;
+
+    private static final Map<Integer, String> CLASSES = Map.ofEntries(  entry(0,"P"),
+                                                                        entry(1,"R"),
+                                                                        entry(2,"N"),
+                                                                        entry(3,"B"),
+                                                                        entry(4,"Q"),
+                                                                        entry(5,"K"),
+                                                                        entry(6,"p"),
+                                                                        entry(7,"r"),
+                                                                        entry(8,"n"),
+                                                                        entry(9,"b"),
+                                                                        entry(10,"q"),
+                                                                        entry(11,"k")  );
+
+    public static class Piece{
+        int row;
+        int col;
+        String type;
+    }
 
     private Network net;
     private CameraBridgeViewBase cameraView;
     private ImageView processedImageView;
-    private Mat grayMat;
     private int frameCounter = 0;
-    private static final int FRAME_INTERVAL = 10;
+    private PyObject chess_renderer;
+    private String whiteOrientation;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,6 +147,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         Button optionsButton = findViewById(R.id.options_button);
         optionsButton.setOnClickListener(this::showPopupMenu);
+        Python python = Python.getInstance();
+        chess_renderer = python.getModule("renderer");
 
     }
 
@@ -149,12 +178,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public void onCameraViewStarted(int width, int height) {
-        grayMat = new Mat(height, width, CvType.CV_8UC1);
+
     }
 
     @Override
     public void onCameraViewStopped() {
-        if (grayMat != null) grayMat.release();
+
     }
 
     @Override
@@ -164,7 +193,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         frameCounter++;
         if (frameCounter % FRAME_INTERVAL == 0) {
-            //Imgproc.cvtColor(frame, grayMat, Imgproc.COLOR_RGB2GRAY);
 
             runOnUiThread(() -> {
 
@@ -181,34 +209,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
                 Mat imageTemp = new Mat();
                 Utils.bitmapToMat(bitmap, imageTemp);
-                Log.v("ImageView size", processedImageView.getWidth() + " " + processedImageView.getHeight());
                 Imgproc.resize(imageTemp, imageTemp, new Size(processedImageView.getHeight(), processedImageView.getWidth()));
-                Bitmap input = Bitmap.createBitmap(imageTemp.cols(), imageTemp.height(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(imageTemp, input);
-                List<Network.Obj> results = net.runSegModel(input, 0.25f, 0.65f, input.getHeight(), input.getWidth());
-
-                Mat image = new Mat();
-                Utils.bitmapToMat(input, image);
-                Mat mask = image.clone();
-
-                for (Network.Obj obj : results) {
-                    Mat roi = mask.submat(obj.rect);
-                    Log.v("rect", obj.rect.x + " " + obj.rect.y + " " + obj.rect.width + " " + obj.rect.height);
-                    roi.setTo(new Scalar(0,0,255), obj.boxMask);
-                    roi.release();
-
-                }
-                addWeighted(image, 0.5, mask, 0.8, 1.0, image);
-                for (Network.Obj obj : results) {
-
-                    Imgproc.rectangle(image, obj.rect, new Scalar(0,0,255));
-                }
-                Bitmap bmp = Bitmap.createBitmap(image.cols(), image.rows(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(image, bmp);
+                getChessboardPNG(imageTemp);
 
 
-
-                processedImageView.setImageBitmap(bmp);
+                //processedImageView.setImageBitmap(bmp);
             });
         }
 
@@ -222,19 +227,183 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             int itemId = item.getItemId();
             if (itemId == R.id.top) {
                 Toast.makeText(this, "Top location selected", Toast.LENGTH_SHORT).show();
+                whiteOrientation = "top";
                 return true;
             } else if (itemId == R.id.bottom) {
                 Toast.makeText(this, "Bottom location selected", Toast.LENGTH_SHORT).show();
+                whiteOrientation = "bottom";
                 return true;
             } else if (itemId == R.id.left) {
                 Toast.makeText(this, "Left location selected", Toast.LENGTH_SHORT).show();
+                whiteOrientation = "left";
                 return true;
             } else if (itemId == R.id.right) {
                 Toast.makeText(this, "Right location selected", Toast.LENGTH_SHORT).show();
+                whiteOrientation = "right";
                 return true;
             }
             return false;
         });
         popupMenu.show();
+    }
+
+    private void getChessboardPNG(Mat input){
+        Bitmap inputBmp = Bitmap.createBitmap(input.cols(), input.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(input, inputBmp);
+        List<Network.ObjSeg> resultsSeg = net.runSegModel(inputBmp, 0.25f, 0.65f, inputBmp.getHeight(), inputBmp.getWidth());
+
+        Mat mask = input.clone();
+
+        Network.ObjSeg objSeg = resultsSeg.get(0);
+        Mat roi = mask.submat(objSeg.rect);
+        roi.setTo(new Scalar(0,0,0), objSeg.boxMask);
+        roi.release();
+
+        List<MatOfPoint> contoursMat = new ArrayList<>();
+        Mat hierarchy = new Mat();
+
+        Imgproc.cvtColor(mask, mask, Imgproc.COLOR_RGB2GRAY);
+        Imgproc.threshold(mask, mask, 0, 255, Imgproc.THRESH_BINARY_INV);
+        Imgproc.findContours(mask, contoursMat, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_NONE);
+
+        List<Point> allPoints = new ArrayList<>();
+        for (MatOfPoint matOfPoint : contoursMat) {
+            List<Point> points = matOfPoint.toList();
+            allPoints.addAll(points);
+        }
+        MatOfPoint2f allPoints2f = new MatOfPoint2f();
+        allPoints2f.fromList(allPoints);
+        MatOfPoint2f verticesMat = new MatOfPoint2f();
+        Imgproc.approxPolyDP(allPoints2f, verticesMat, 0.02*Imgproc.arcLength(allPoints2f, true), true);
+
+        List<Point> vertices = orderVertices(verticesMat.toList());
+        Object[] warpResults = warpChessboard(vertices);
+        Mat M = (Mat) warpResults[0];
+        double squareSize = (double) warpResults[1];
+
+        List<Network.ObjDet> resultsDet = net.runDetModel(inputBmp, CLASSES.size(),0.30f, 0.65f, input.cols(), input.rows());
+        List<Piece> piecesPositions = getPiecesPositions(resultsDet, M, squareSize);
+        String fenBoard = getFenBoard(piecesPositions);
+        chess_renderer.callAttr("render_chessboard", fenBoard, whiteOrientation);
+
+    }
+
+    private List<Point> orderVertices(List<Point> vertices) {
+        List<Point> sortedVertices = new ArrayList<>();
+        vertices.sort((v1, v2) -> {
+            if (v1.x != v2.x) {
+                return Double.compare(v2.x, v1.x);
+            }
+            return Double.compare(v1.y, v2.y);
+        });
+
+        List<Point> rightVertices = vertices.subList(0, 2);
+        List<Point> leftVertices = vertices.subList(2, 4);
+
+        Point topRight = Collections.min(rightVertices, Comparator.comparingDouble(v -> v.y));
+        Point bottomRight = Collections.max(rightVertices, Comparator.comparingDouble(v -> v.y));
+        Point topLeft = Collections.min(leftVertices, Comparator.comparingDouble(v -> v.y));
+        Point bottomLeft = Collections.max(leftVertices, Comparator.comparingDouble(v -> v.y));
+
+        sortedVertices.add(topLeft);
+        sortedVertices.add(topRight);
+        sortedVertices.add(bottomRight);
+        sortedVertices.add(bottomLeft);
+
+        return sortedVertices;
+    }
+
+    private Object[] warpChessboard(List<Point> vertices){
+        Point topLeft = vertices.get(0);
+        Point topRight = vertices.get(1);
+
+        double sideChessboard = Math.sqrt(Math.pow( (topRight.x - topLeft.x), 2) + Math.pow( (topRight.y - topLeft.y), 2));
+
+        List<Point> dest = new ArrayList<>();
+        dest.add(new Point(0,0));
+        dest.add(new Point(sideChessboard,0));
+        dest.add(new Point(sideChessboard,sideChessboard));
+        dest.add(new Point(0,sideChessboard));
+
+        Mat srcMat = Converters.vector_Point2f_to_Mat(vertices);
+        Mat dstMat = Converters.vector_Point2f_to_Mat(dest);
+
+        Mat M = Imgproc.getPerspectiveTransform(srcMat, dstMat);
+        double squareSize = sideChessboard / 8;
+
+        return new Object[]{M, squareSize};
+    }
+
+    private List<Piece> getPiecesPositions(List<Network.ObjDet> objs, Mat M, double square_size){
+        List<Point> ogPoints = new ArrayList<>();
+        List<String> pieceClasses = new ArrayList<>();
+        for (Network.ObjDet obj : objs){
+            Rect r = obj.rect;
+            Point lowCenter = new Point(r.x + r.width /2f, r.y + r.height/2f + r.height/2.4);
+            ogPoints.add(lowCenter);
+
+            String pieceClass = CLASSES.get(obj.label);
+            pieceClasses.add(pieceClass);
+        }
+
+        Mat transformedPointsMat = new Mat();
+        perspectiveTransform(Converters.vector_Point2f_to_Mat(ogPoints), transformedPointsMat, M);
+        List<Point> transformedPoints = new ArrayList<>();
+        Converters.Mat_to_vector_Point2f(transformedPointsMat, transformedPoints);
+
+        List<Piece> piecesPositions = new ArrayList<>();
+        for (int i = 0; i < transformedPoints.size(); i++){
+            double transformedX = transformedPoints.get(i).x;
+            double transformedY = transformedPoints.get(i).y;
+
+            int square_col = (int) (transformedX / square_size);
+            int square_row = (int) (transformedY / square_size) + 1;
+            Piece piece = new Piece();
+            piece.col = square_col;
+            piece.row = 8-square_row;
+            piece.type = pieceClasses.get(i);
+            piecesPositions.add(piece);
+        }
+        return piecesPositions;
+
+    }
+
+    private String getFenBoard(List<Piece> positions){
+        String[][] board = new String[8][8];
+        for (int i = 0; i < 8; i++){
+            for (int j = 0; j < 8; j++){
+                board[i][j] = "";
+            }
+        }
+
+        for (Piece p : positions){
+            board[p.row][p.col] = p.type;
+        }
+
+        StringBuilder fenRows = new StringBuilder();
+
+        for (int i = 7; i >= 0; i--){
+            StringBuilder fenRow = new StringBuilder();
+            int emptyCount = 0;
+
+            for (int j = 0; j < 8; j++){
+                String cell = board[i][j];
+                if (cell.isEmpty()) {
+                    emptyCount++;
+                }else{
+                    if (emptyCount > 0){
+                        fenRow.append(emptyCount);
+                        emptyCount = 0;
+                    }
+                    fenRow.append(cell);
+                }
+            }
+            if (emptyCount > 0){
+                fenRow.append(emptyCount);
+            }
+            fenRows.append(fenRow.toString()).append('/');
+        }
+        return fenRows.substring(0, fenRows.length()-1);
+
     }
 }

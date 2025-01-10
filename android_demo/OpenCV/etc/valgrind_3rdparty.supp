@@ -31,21 +31,21 @@
    OpenCL
    Memcheck:Cond
    ...
-   obj:**/libOpenCL.so*
+   objSeg:**/libOpenCL.so*
 }
 
 {
    OpenCL-Intel
    Memcheck:Cond
    ...
-   obj:**/libigdrcl.so
+   objSeg:**/libigdrcl.so
 }
 
 {
    OpenCL-Intel
    Memcheck:Leak
    ...
-   obj:*/libigdrcl.so*
+   objSeg:*/libigdrcl.so*
 }
 
 {
@@ -74,14 +74,14 @@
    gcrypt
    Memcheck:Leak
    ...
-   obj:*/libgcrypt*
+   objSeg:*/libgcrypt*
 }
 
 {
    p11-kit
    Memcheck:Leak
    fun:*alloc
-   obj:*/libp11-kit*
+   objSeg:*/libp11-kit*
 }
 
 {
@@ -89,14 +89,14 @@
    Memcheck:Leak
    fun:*alloc
    ...
-   obj:*/libgobject*
+   objSeg:*/libgobject*
 }
 
 {
    tasn
    Memcheck:Leak
    fun:*alloc
-   obj:*/libtasn*.so*
+   objSeg:*/libtasn*.so*
 }
 
 {
@@ -118,7 +118,7 @@
    Memcheck:Leak
    fun:*alloc
    ...
-   obj:/usr/lib/libgdal.so.1.17.1
+   objSeg:/usr/lib/libgdal.so.1.17.1
 }
 
 {
@@ -155,9 +155,9 @@
    Memcheck:Leak
    ...
    fun:gst*
-   obj:*gstmatroska*
+   objSeg:*gstmatroska*
    ...
-   obj:*glib*
+   objSeg:*glib*
    fun:start_thread
    fun:clone
 }
@@ -167,7 +167,7 @@
    Memcheck:Leak
    ...
    fun:gst_riff_create_video_caps
-   obj:*gstmatroska*
+   objSeg:*gstmatroska*
    ...
    fun:clone
 }
@@ -200,7 +200,7 @@
    GStreamer-separate-threads
    Memcheck:Leak
    ...
-   obj:*/libglib*
+   objSeg:*/libglib*
    fun:start_thread
    fun:clone
 }
@@ -210,8 +210,8 @@
    Memcheck:Leak
    match-leak-kinds: definite
    fun:_Znwm
-   obj:*
-   obj:*
+   objSeg:*
+   objSeg:*
    fun:start_thread
    fun:clone
 }
@@ -220,11 +220,11 @@
    avcodec57-ffv1-16bit-ubuntu18
    Memcheck:Cond
    ...
-   obj:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
+   objSeg:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
    fun:avcodec_default_execute
-   obj:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
+   objSeg:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
    fun:avcodec_encode_video2
-   obj:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
+   objSeg:/usr/lib/x86_64-linux-gnu/libavcodec.so.57.107.100
    fun:avcodec_send_frame
    ...
 }
