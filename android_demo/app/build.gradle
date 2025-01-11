@@ -51,7 +51,7 @@ dependencies {
     implementation libs.play.services.tflite.java
     implementation libs.play.services.tflite.support
     implementation libs.play.services.tflite.gpu
-
+    implementation libs.androidsvg
 }
 
 chaquopy {

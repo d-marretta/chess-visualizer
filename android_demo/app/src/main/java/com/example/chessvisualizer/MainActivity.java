@@ -7,6 +7,8 @@ import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.PictureDrawable;
 import android.os.Bundle;
 import android.Manifest;
 
@@ -43,6 +45,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import com.caverock.androidsvg.SVG;
+import com.caverock.androidsvg.SVGParseException;
 import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
 
@@ -210,10 +214,15 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 Mat imageTemp = new Mat();
                 Utils.bitmapToMat(bitmap, imageTemp);
                 Imgproc.resize(imageTemp, imageTemp, new Size(processedImageView.getHeight(), processedImageView.getWidth()));
-                getChessboardPNG(imageTemp);
+                String svgStr = getChessboardSVG(imageTemp);
+                try {
+                    SVG svg = SVG.getFromString(svgStr);
+                    Drawable drawable = new PictureDrawable(svg.renderToPicture());
+                    processedImageView.setImageDrawable(drawable);
+                } catch (SVGParseException e) {
+                    throw new RuntimeException(e);
+                }
 
-
-                //processedImageView.setImageBitmap(bmp);
             });
         }
 
@@ -247,7 +256,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         popupMenu.show();
     }
 
-    private void getChessboardPNG(Mat input){
+    private String getChessboardSVG(Mat input){
         Bitmap inputBmp = Bitmap.createBitmap(input.cols(), input.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(input, inputBmp);
         List<Network.ObjSeg> resultsSeg = net.runSegModel(inputBmp, 0.25f, 0.65f, inputBmp.getHeight(), inputBmp.getWidth());
@@ -284,8 +293,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         List<Network.ObjDet> resultsDet = net.runDetModel(inputBmp, CLASSES.size(),0.30f, 0.65f, input.cols(), input.rows());
         List<Piece> piecesPositions = getPiecesPositions(resultsDet, M, squareSize);
         String fenBoard = getFenBoard(piecesPositions);
-        chess_renderer.callAttr("render_chessboard", fenBoard, whiteOrientation);
-
+        PyObject svg = chess_renderer.callAttr("render_chessboard", fenBoard, whiteOrientation);
+        return svg.toString();
     }
 
     private List<Point> orderVertices(List<Point> vertices) {
