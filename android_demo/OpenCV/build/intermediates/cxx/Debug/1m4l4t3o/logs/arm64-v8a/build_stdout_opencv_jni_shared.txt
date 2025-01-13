@@ -1,2 +1,0 @@
-ninja: Entering directory `/home/daniele/AndroidStudioProjects/ChessVisualizer/OpenCV/.cxx/Debug/1m4l4t3o/arm64-v8a'
-ninja: no work to do.

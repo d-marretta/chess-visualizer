@@ -14,6 +14,7 @@ import static org.opencv.imgproc.Imgproc.INTER_LINEAR;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
+import android.graphics.RectF;
 import android.util.Log;
 
 import com.google.android.gms.tasks.Task;
@@ -55,13 +56,13 @@ import java.util.Map;
 
 public class Network {
 
-    private static final int YOLO_HEIGHT = 640;
-    private static final int YOLO_WIDTH = 640;
+    public static final int YOLO_HEIGHT = 640;
+    public static final int YOLO_WIDTH = 640;
     private static final int SEG_CHANNELS = 32;
     private static final int SEG_W = 160;
     private static final int SEG_H = 160;
     private static final int TOP_K = 100;
-    private static final float SEGMENTATION_THRESHOLD = 0.0f;
+    private static final float SEGMENTATION_THRESHOLD = 0.5f;
     private InterpreterApi seg_interpreter;
     private int segNumAttributes;
     private int segNumAnchors;
@@ -98,7 +99,6 @@ public class Network {
         MappedByteBuffer det_model = loadModelFile(context, detModelName);
         initializeTask.addOnSuccessListener(a -> {
                     imageProcessor = new ImageProcessor.Builder()
-                            .add(new ResizeOp(YOLO_HEIGHT, YOLO_WIDTH, ResizeOp.ResizeMethod.BILINEAR))
                             .add(new NormalizeOp(0, 255.0f))
                             .build();
 
@@ -148,7 +148,7 @@ public class Network {
         return retFile;
     }
 
-    public List<ObjSeg> runSegModel(Bitmap bitmap, float confThreshold, float nmsThreshold, int ogImgHeight, int ogImgWidth) {
+    public List<ObjSeg> runSegModel(Bitmap bitmap, float confThreshold, float nmsThreshold, int ogImgWidth, int ogImgHeight) {
         TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
         tensorImage.load(bitmap);
 
@@ -181,7 +181,7 @@ public class Network {
 
     }
 
-    public List<ObjDet> runDetModel(Bitmap bitmap, int numClasses, float confThreshold, float nmsThreshold, int ogImgHeight, int ogImgWidth) {
+    public List<ObjDet> runDetModel(Bitmap bitmap, int numClasses, float confThreshold, float nmsThreshold, int ogImgWidth, int ogImgHeight) {
         TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
         tensorImage.load(bitmap);
 
@@ -253,7 +253,7 @@ public class Network {
             System.arraycopy(row, 4 + numClasses, maskConfsUnNorm, 0, SEG_CHANNELS);
             float[] maskConfsArr = new float[SEG_CHANNELS];
             for (int j = 0; j < maskConfsUnNorm.length; j++){
-                maskConfsArr[j] = maskConfsUnNorm[j] * 255.0f;
+                maskConfsArr[j] = maskConfsUnNorm[j];
             }
 
             float maxScore = -1;
@@ -264,19 +264,18 @@ public class Network {
                     maxIndex = j;
                 }
             }
-
             if (maxScore > confThreshold) {
                 float x = bboxesArr[0];
                 float y = bboxesArr[1];
                 float w = bboxesArr[2];
                 float h = bboxesArr[3];
 
-                float x0 = clamp((x - 0.5f * w) * ogImgWidth, 0.0f, ogImgWidth);
-                float y0 = clamp((y - 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
-                float x1 = clamp((x + 0.5f * w) * ogImgWidth, 0.0f,  ogImgWidth);
-                float y1 = clamp((y + 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
+                float x0 = clamp(((x - 0.5f * w) * mRatio * YOLO_WIDTH), 0.0f, ogImgWidth);
+                float y0 = clamp(((y - 0.5f * h) * mRatio * YOLO_HEIGHT) , 0.0f, ogImgHeight);
+                float x1 = clamp(((x + 0.5f * w) * mRatio * YOLO_WIDTH) , 0.0f, ogImgWidth);
+                float y1 = clamp(((y + 0.5f * h) * mRatio * YOLO_HEIGHT), 0.0f, ogImgHeight);
 
-                Rect bbox = new Rect((int) x0, (int) y0, (int) (x1 - x0), (int) (y1 - y0));
+                Rect bbox = new Rect((int)x0, (int) y0, (int) (x1 - x0), (int) (y1 - y0));
                 Mat maskConf = new Mat(1, SEG_CHANNELS, CvType.CV_32F);
                 maskConf.put(0,0,maskConfsArr);
 
@@ -313,6 +312,9 @@ public class Network {
 
         Dnn.NMSBoxesBatched(matOfBboxes, matOfScores, matOfLabels, confThreshold, nmsThreshold, indicesMat);
 
+        if (indicesMat.empty()){
+            return new ArrayList<>();
+        }
         List<Integer> indices = indicesMat.toList();
 
         Mat masks = new Mat();
@@ -326,7 +328,6 @@ public class Network {
             objSeg.label = labels.get(i);
             objSeg.rect = tmp;
             objSeg.probability = scores.get(i);
-
             masks.push_back(maskConfs.get(i));
             objSegs.add(objSeg);
             cnt++;
@@ -414,10 +415,10 @@ public class Network {
                 float w = bboxesArr[2];
                 float h = bboxesArr[3];
 
-                float x0 = clamp((x - 0.5f * w) * ogImgWidth, 0.0f, ogImgWidth);
-                float y0 = clamp((y - 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
-                float x1 = clamp((x + 0.5f * w) * ogImgWidth, 0.0f,  ogImgWidth);
-                float y1 = clamp((y + 0.5f * h) * ogImgHeight, 0.0f, ogImgHeight);
+                float x0 = clamp(((x - 0.5f * w) * mRatio * YOLO_WIDTH), 0.0f, ogImgWidth);
+                float y0 = clamp(((y - 0.5f * h) * mRatio * YOLO_HEIGHT) , 0.0f, ogImgHeight);
+                float x1 = clamp(((x + 0.5f * w) * mRatio * YOLO_WIDTH) , 0.0f, ogImgWidth);
+                float y1 = clamp(((y + 0.5f * h) * mRatio * YOLO_HEIGHT), 0.0f, ogImgHeight);
 
                 Rect bbox = new Rect((int) x0, (int) y0, (int) (x1 - x0), (int) (y1 - y0));
                 labels.add(maxIndex);

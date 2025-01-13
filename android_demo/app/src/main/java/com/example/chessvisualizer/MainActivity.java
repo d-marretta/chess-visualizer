@@ -1,5 +1,6 @@
 package com.example.chessvisualizer;
 
+import static org.opencv.core.Core.addWeighted;
 import static org.opencv.core.Core.perspectiveTransform;
 import static java.util.Map.entry;
 
@@ -20,6 +21,8 @@ import android.widget.Toast;
 
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.Utils;
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
@@ -27,6 +30,7 @@ import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
+import org.opencv.dnn.Net;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.utils.Converters;
@@ -54,7 +58,7 @@ import com.chaquo.python.Python;
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
     private static final String TAG = "MainActivity";
-    private static final int FRAME_INTERVAL = 10;
+    private static final int FRAME_INTERVAL = 15;
 
     private static final Map<Integer, String> CLASSES = Map.ofEntries(  entry(0,"P"),
                                                                         entry(1,"R"),
@@ -197,33 +201,33 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         frameCounter++;
         if (frameCounter % FRAME_INTERVAL == 0) {
+            AssetManager assetManager = getAssets();
 
-            runOnUiThread(() -> {
+            InputStream istr;
+            try {
+                istr = assetManager.open("my_chessboard_v.jpeg");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            Bitmap bitmap = BitmapFactory.decodeStream(istr);
+            Mat test = new Mat();
+            Utils.bitmapToMat(bitmap, test);
+            String svgStr = getChessboardSVG(frame);
+            //svgStr = "";
 
-                AssetManager assetManager = getAssets();
-
-                InputStream istr;
-                Bitmap bitmap;
+            if(!svgStr.isEmpty()) {
+                SVG svg;
                 try {
-                    istr = assetManager.open("G000_IMG000.jpg");
-                    bitmap = BitmapFactory.decodeStream(istr);
-                    istr.close();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                Mat imageTemp = new Mat();
-                Utils.bitmapToMat(bitmap, imageTemp);
-                Imgproc.resize(imageTemp, imageTemp, new Size(processedImageView.getHeight(), processedImageView.getWidth()));
-                String svgStr = getChessboardSVG(imageTemp);
-                try {
-                    SVG svg = SVG.getFromString(svgStr);
-                    Drawable drawable = new PictureDrawable(svg.renderToPicture());
-                    processedImageView.setImageDrawable(drawable);
+                    svg = SVG.getFromString(svgStr);
                 } catch (SVGParseException e) {
                     throw new RuntimeException(e);
                 }
+                Drawable drawable = new PictureDrawable(svg.renderToPicture());
+                runOnUiThread(() -> {
+                    processedImageView.setImageDrawable(drawable);
+                });
+            }
 
-            });
         }
 
         return frame;
@@ -257,22 +261,43 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private String getChessboardSVG(Mat input){
-        Bitmap inputBmp = Bitmap.createBitmap(input.cols(), input.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(input, inputBmp);
-        List<Network.ObjSeg> resultsSeg = net.runSegModel(inputBmp, 0.25f, 0.65f, inputBmp.getHeight(), inputBmp.getWidth());
+        int originalWidth = input.cols();
+        int originalHeight = input.rows();
 
-        Mat mask = input.clone();
+        float scale = Math.min((float) Network.YOLO_WIDTH / originalWidth, (float) Network.YOLO_HEIGHT / originalHeight);
+        int newWidth = Math.round(originalWidth * scale);
+        int newHeight = Math.round(originalHeight * scale);
+
+        Mat resizedImage = new Mat();
+        Imgproc.resize(input, resizedImage, new Size(newWidth, newHeight));
+
+        int deltaWidth = Network.YOLO_WIDTH - newWidth;
+        int deltaHeight = Network.YOLO_HEIGHT - newHeight;
+
+        Mat paddedImage = new Mat();
+        Core.copyMakeBorder(resizedImage, paddedImage,
+                0, deltaHeight,
+                0, deltaWidth,
+                Core.BORDER_CONSTANT, Scalar.all(0));
+
+        Bitmap inputBmp = Bitmap.createBitmap(paddedImage.cols(), paddedImage.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(paddedImage, inputBmp);
+
+        List<Network.ObjSeg> resultsSeg = net.runSegModel(inputBmp, 0.25f, 0.65f, originalWidth, originalHeight);
+        if (resultsSeg.isEmpty()){
+            return "";
+        }
+        Mat mask = new Mat(input.size(), CvType.CV_8UC3, new Scalar(0, 0, 0));
 
         Network.ObjSeg objSeg = resultsSeg.get(0);
         Mat roi = mask.submat(objSeg.rect);
-        roi.setTo(new Scalar(0,0,0), objSeg.boxMask);
+        roi.setTo(new Scalar(255,255,255), objSeg.boxMask);
         roi.release();
 
         List<MatOfPoint> contoursMat = new ArrayList<>();
         Mat hierarchy = new Mat();
 
         Imgproc.cvtColor(mask, mask, Imgproc.COLOR_RGB2GRAY);
-        Imgproc.threshold(mask, mask, 0, 255, Imgproc.THRESH_BINARY_INV);
         Imgproc.findContours(mask, contoursMat, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_NONE);
 
         List<Point> allPoints = new ArrayList<>();
@@ -290,7 +315,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         Mat M = (Mat) warpResults[0];
         double squareSize = (double) warpResults[1];
 
-        List<Network.ObjDet> resultsDet = net.runDetModel(inputBmp, CLASSES.size(),0.30f, 0.65f, input.cols(), input.rows());
+        List<Network.ObjDet> resultsDet = net.runDetModel(inputBmp, CLASSES.size(),0.30f, 0.65f, originalWidth, originalHeight);
+
         List<Piece> piecesPositions = getPiecesPositions(resultsDet, M, squareSize);
         String fenBoard = getFenBoard(piecesPositions);
         PyObject svg = chess_renderer.callAttr("render_chessboard", fenBoard, whiteOrientation);
@@ -307,7 +333,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         });
 
         List<Point> rightVertices = vertices.subList(0, 2);
-        List<Point> leftVertices = vertices.subList(2, 4);
+        List<Point> leftVertices = vertices.subList(vertices.size()-2, vertices.size());
 
         Point topRight = Collections.min(rightVertices, Comparator.comparingDouble(v -> v.y));
         Point bottomRight = Collections.max(rightVertices, Comparator.comparingDouble(v -> v.y));
@@ -386,7 +412,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
 
         for (Piece p : positions){
-            board[p.row][p.col] = p.type;
+            try {
+                board[p.row][p.col] = p.type;
+            } catch(IndexOutOfBoundsException e){}
         }
 
         StringBuilder fenRows = new StringBuilder();
@@ -416,3 +444,78 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     }
 }
+/*
+AssetManager assetManager = getAssets();
+
+InputStream istr;
+try {
+    istr = assetManager.open("my_chessboard_v.jpeg");
+} catch (IOException e) {
+    throw new RuntimeException(e);
+}
+Bitmap bitmap = BitmapFactory.decodeStream(istr);
+Mat test = new Mat();
+Utils.bitmapToMat(bitmap, test);
+
+int originalWidth = test.cols();
+int originalHeight = test.rows();
+
+float scale = Math.min((float) 640 / originalWidth, (float) 640 / originalHeight);
+int newWidth = Math.round(originalWidth * scale);
+int newHeight = Math.round(originalHeight * scale);
+
+Mat resizedImage = new Mat();
+Imgproc.resize(test, resizedImage, new Size(newWidth, newHeight));
+
+int deltaWidth = 640 - newWidth;
+int deltaHeight = 640 - newHeight;
+
+Mat paddedImage = new Mat();
+Core.copyMakeBorder(resizedImage, paddedImage,
+        0, deltaHeight,
+        0, deltaWidth,
+        Core.BORDER_CONSTANT, Scalar.all(0));
+
+Bitmap input = Bitmap.createBitmap(paddedImage.cols(), paddedImage.rows(), Bitmap.Config.ARGB_8888);
+Utils.matToBitmap(paddedImage, input);
+
+
+List<Network.ObjSeg> resultsSeg = net.runSegModel(input, 0.25f, 0.65f, test.cols(), test.rows());
+
+//Mat mask = test.clone();
+Mat mask = new Mat(test.size(), CvType.CV_8UC3, new Scalar(0, 0, 0));
+
+Network.ObjSeg objSeg = resultsSeg.get(0);
+Mat roi = mask.submat(objSeg.rect);
+roi.setTo(new Scalar(255,255,255), objSeg.boxMask);
+roi.release();
+
+List<MatOfPoint> contoursMat = new ArrayList<>();
+Mat hierarchy = new Mat();
+
+Imgproc.cvtColor(mask, mask, Imgproc.COLOR_RGB2GRAY);
+
+Imgproc.findContours(mask, contoursMat, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_NONE);
+
+List<Point> allPoints = new ArrayList<>();
+for (MatOfPoint matOfPoint : contoursMat) {
+    List<Point> points = matOfPoint.toList();
+    allPoints.addAll(points);
+}
+MatOfPoint2f allPoints2f = new MatOfPoint2f();
+allPoints2f.fromList(allPoints);
+MatOfPoint2f verticesMat = new MatOfPoint2f();
+Imgproc.approxPolyDP(allPoints2f, verticesMat, 0.02*Imgproc.arcLength(allPoints2f, true), true);
+
+List<Point> vertices = orderVertices(verticesMat.toList());
+for (Point p : vertices){
+    Imgproc.circle(test, p, 15,  new Scalar(255,0,0), -1);
+}
+Imgproc.rectangle(test, objSeg.rect, new Scalar(255,0,0), 5);
+Bitmap out = Bitmap.createBitmap(test.cols(), test.rows(), Bitmap.Config.ARGB_8888);
+Utils.matToBitmap(test, out);
+runOnUiThread(() -> {
+    processedImageView.setImageBitmap(out);
+});
+
+  */

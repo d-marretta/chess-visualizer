@@ -102,5 +102,5 @@ def get_chessboard_positions(seg_yolo, detect_yolo, image_path, white_orientatio
     
 if __name__ == '__main__':
     seg_yolo = ultralytics.YOLO('./models/yolo11n-seg-best.pt')
-    detect_yolo = ultralytics.YOLO('./models/yolo11s-best.pt')
+    detect_yolo = ultralytics.YOLO('./models/yolo11n-best.pt')
     evaluate_chessboard_function(seg_yolo, detect_yolo, './backup/annotations.json', allowed_errors=0)
