@@ -136,34 +136,9 @@ def main(seg_yolo, detect_yolo, image_path, white_orientation = 'south'):
 
 
 if __name__ == '__main__':
-    # seg_yolo = ultralytics.YOLO('./models/yolo11n-seg-best-new.pt')
-    # detect_yolo = ultralytics.YOLO('./models/yolo11s-best.pt')
-    # image_path = 'chessboard.jpg'
-    # main(seg_yolo, detect_yolo, image_path, 'west')
-    # coords = [0.6827077269554138,0.23264890909194946,0.23223887383937836,0.3224409818649292,0.7537182569503784,0.6682502031326294,0.3313479423522949,0.746788501739502]
-    # im = cv2.imread('data/0.jpg')
-    # height, width, _ = im.shape
-    # cv2.circle(im, (int(coords[0]*width),int((1-coords[1])*height)), 5, (255,0,255), -1)
-    # cv2.circle(im, (int(coords[2]*width),int((1-coords[3])*height)), 5, (255,0,255), -1)
-    # cv2.circle(im, (int(coords[4]*width),int((1-coords[5])*height)), 5, (255,0,255), -1)
-    # cv2.circle(im, (int(coords[6]*width),int((1-coords[7])*height)), 5, (255,0,255), -1)
-    # cv2.imwrite('prova.jpg', im)
-    im = cv2.imread('ChessRender360/rgb/rgb_0.jpeg')
-    im = cv2.resize(im, (1500,1080), interpolation=cv2.INTER_LINEAR)
-    cv2.imwrite('prova2.jpg', im)
-    print(im.shape[:2])
-    original_height, original_width, _ = im.shape
-    scale = min(640 / original_width, 640 / original_height)
-    new_width = int(original_width * scale)
-    new_height = int(original_height * scale)
+    seg_yolo = ultralytics.YOLO('./models/yolo11n-seg-best.pt')
+    detect_yolo = ultralytics.YOLO('./models/yolo11n-best.pt')
+    image_path = ''
+    main(seg_yolo, detect_yolo, image_path, 'west')
     
-    resized_image = cv2.resize(im, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-    
-    # Create a blank image with the target dimensions
-    padded_image = np.zeros((640, 640, 3), dtype=im.dtype)
-    
-    # Place the resized image onto the blank image
-    padded_image[0:new_height, 0:new_width] = resized_image
-    #res = cv2.resize(im, (640,640))
-    cv2.imwrite('prova.jpg', padded_image)
 
