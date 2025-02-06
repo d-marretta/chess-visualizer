@@ -5,9 +5,7 @@ import static org.opencv.core.Core.perspectiveTransform;
 import static java.util.Map.entry;
 
 import android.content.pm.PackageManager;
-import android.content.res.AssetManager;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.PictureDrawable;
 import android.os.Bundle;
@@ -30,7 +28,6 @@ import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.dnn.Net;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.utils.Converters;
@@ -42,7 +39,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -201,17 +197,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         frameCounter++;
         if (frameCounter % FRAME_INTERVAL == 0) {
-            AssetManager assetManager = getAssets();
 
-            InputStream istr;
-            try {
-                istr = assetManager.open("my_chessboard_v.jpeg");
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            Bitmap bitmap = BitmapFactory.decodeStream(istr);
-            Mat test = new Mat();
-            Utils.bitmapToMat(bitmap, test);
             String svgStr = getChessboardSVG(frame);
             //svgStr = "";
 
@@ -444,78 +430,3 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     }
 }
-/*
-AssetManager assetManager = getAssets();
-
-InputStream istr;
-try {
-    istr = assetManager.open("my_chessboard_v.jpeg");
-} catch (IOException e) {
-    throw new RuntimeException(e);
-}
-Bitmap bitmap = BitmapFactory.decodeStream(istr);
-Mat test = new Mat();
-Utils.bitmapToMat(bitmap, test);
-
-int originalWidth = test.cols();
-int originalHeight = test.rows();
-
-float scale = Math.min((float) 640 / originalWidth, (float) 640 / originalHeight);
-int newWidth = Math.round(originalWidth * scale);
-int newHeight = Math.round(originalHeight * scale);
-
-Mat resizedImage = new Mat();
-Imgproc.resize(test, resizedImage, new Size(newWidth, newHeight));
-
-int deltaWidth = 640 - newWidth;
-int deltaHeight = 640 - newHeight;
-
-Mat paddedImage = new Mat();
-Core.copyMakeBorder(resizedImage, paddedImage,
-        0, deltaHeight,
-        0, deltaWidth,
-        Core.BORDER_CONSTANT, Scalar.all(0));
-
-Bitmap input = Bitmap.createBitmap(paddedImage.cols(), paddedImage.rows(), Bitmap.Config.ARGB_8888);
-Utils.matToBitmap(paddedImage, input);
-
-
-List<Network.ObjSeg> resultsSeg = net.runSegModel(input, 0.25f, 0.65f, test.cols(), test.rows());
-
-//Mat mask = test.clone();
-Mat mask = new Mat(test.size(), CvType.CV_8UC3, new Scalar(0, 0, 0));
-
-Network.ObjSeg objSeg = resultsSeg.get(0);
-Mat roi = mask.submat(objSeg.rect);
-roi.setTo(new Scalar(255,255,255), objSeg.boxMask);
-roi.release();
-
-List<MatOfPoint> contoursMat = new ArrayList<>();
-Mat hierarchy = new Mat();
-
-Imgproc.cvtColor(mask, mask, Imgproc.COLOR_RGB2GRAY);
-
-Imgproc.findContours(mask, contoursMat, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_NONE);
-
-List<Point> allPoints = new ArrayList<>();
-for (MatOfPoint matOfPoint : contoursMat) {
-    List<Point> points = matOfPoint.toList();
-    allPoints.addAll(points);
-}
-MatOfPoint2f allPoints2f = new MatOfPoint2f();
-allPoints2f.fromList(allPoints);
-MatOfPoint2f verticesMat = new MatOfPoint2f();
-Imgproc.approxPolyDP(allPoints2f, verticesMat, 0.02*Imgproc.arcLength(allPoints2f, true), true);
-
-List<Point> vertices = orderVertices(verticesMat.toList());
-for (Point p : vertices){
-    Imgproc.circle(test, p, 15,  new Scalar(255,0,0), -1);
-}
-Imgproc.rectangle(test, objSeg.rect, new Scalar(255,0,0), 5);
-Bitmap out = Bitmap.createBitmap(test.cols(), test.rows(), Bitmap.Config.ARGB_8888);
-Utils.matToBitmap(test, out);
-runOnUiThread(() -> {
-    processedImageView.setImageBitmap(out);
-});
-
-  */
