@@ -497,3 +497,4 @@ if __name__ == '__main__':
     # test_dataset_chessrender360('datasets/detection_dataset/images/test', train_ids_chessrenderer360)
     # test_dataset_chessred2k()
     test_dataset_chesscog()
+    

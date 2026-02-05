@@ -7,3 +7,12 @@ detect_pieces/
 backup/
 ChessRender360/
 chesscog/
+__pycache__/
+.ipynb_checkpoints/
+.vscode/
+.DS_Store
+env/
+venv/
+*.pyc
+*.pyo
+*.pyd

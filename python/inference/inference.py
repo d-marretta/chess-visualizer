@@ -5,6 +5,7 @@ import math
 import chess
 import cairosvg
 import ultralytics
+import argparse
 
 def get_coords_chessboards(model, image_path):
     results = model(image_path, verbose=False)
@@ -126,19 +127,23 @@ def get_fen_board(positions, white_orientation):
 
     return board
 
-def main(seg_yolo, detect_yolo, image_path, white_orientation = 'south'):
+def main(seg_yolo, detect_yolo, image_path, white_orientation = 'south', output_image_path = 'output.png'):
     vertices = get_coords_chessboards(seg_yolo, image_path)
     M, square_size = warp_chessboard(vertices)
     positions = get_bboxes(detect_yolo, image_path, M, square_size)
     board = get_fen_board(positions, white_orientation)
 
-    cairosvg.svg2png(chess.svg.board(board, size=1200),write_to='prova.png')
+    cairosvg.svg2png(chess.svg.board(board, size=1200),write_to=output_image_path)
 
 
 if __name__ == '__main__':
-    seg_yolo = ultralytics.YOLO('./models/yolo11n-seg-best.pt')
-    detect_yolo = ultralytics.YOLO('./models/yolo11n-best.pt')
-    image_path = ''
-    main(seg_yolo, detect_yolo, image_path, 'west')
+    parser = argparse.ArgumentParser(description='Convert chessboard image to FEN')
+    parser.add_argument('--input_image', type=str, help='Path to the chessboard input image')
+    parser.add_argument('--output_image', type=str, help='Path to save the output image with detected pieces')
+    parser.add_argument('--orientation', type=str, choices=['north', 'east', 'south', 'west'], default='south', help='Orientation of the chessboard')
+    parser.add_argument('--seg_model', type=str, default='./models/yolo11n-seg-best.pt', help='Path to the YOLO segmentation model')
+    parser.add_argument('--detect_model', type=str, default='./models/yolo11n-best.pt', help='Path to the YOLO detection model')
+    args = parser.parse_args()
+    main(ultralytics.YOLO(args.seg_model), ultralytics.YOLO(args.detect_model), args.input_image, args.orientation, args.output_image)
     
 
