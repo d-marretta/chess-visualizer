@@ -1,9 +1,27 @@
 # Chess Visualizer: Real-time chessboard digitization on Android
 
+<p align="center">
+  <img src="assets/banner_conversion.png" alt="Conversion example" width="600"/>
+</p>
+
 **Chess Visualizer** is an Android application project that uses computer vision and deep learning to recognize physical chess positions and convert them into digital format in real-time.
 
 Powered by **YOLO11** models optimized for mobile, the app performs full on-device inference to segment chessboards, detect pieces, and reconstruct the game state.
 
+---
+
+## 📱 Android Demo
+
+<p align="left">
+  <img src="assets/android_screenshot.png" alt="Android app interface" width="300"/>
+</p>
+
+The app runs entirely on-device, allowing users to:
+1.  Point the camera at a physical chessboard.
+2.  Adjust the orientation (e.g., White at the bottom).
+3.  Instantly generate a 2D SVG representation of the game.
+
+---
 
 ## 🚀 Key points
 
@@ -17,6 +35,11 @@ This project demonstrates the deployment of state-of-the-art object detection mo
 * Utilizes **OpenCV** for perspective warping and homography transformations to map 2D image coordinates to the 8x8 chess grid.
 
 ## How it works
+
+<p align="left">
+  <img src="assets/model_visualization.png" alt="Models outputs" width="400"/>
+</p>
+*Left: YOLO-Seg identifying the board area. Right: YOLO-Det localizing individual pieces.*
 
 The application follows a multi-stage pipeline to process every frame:
 
